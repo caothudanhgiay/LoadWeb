@@ -32,9 +32,6 @@ Future main() async {
       ));
     }
   }
-  else if(Platform.isIOS){
-
-  }
 
   runApp(MyApp());
 }

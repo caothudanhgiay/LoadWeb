@@ -2,11 +2,13 @@ import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_archive/flutter_archive.dart';
+import 'package:loadweb/platform_channel.dart';
 import 'package:open_file/open_file.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
+
+import 'percent_loading.dart';
 
 class HomePage extends StatefulWidget {
   @override
@@ -16,7 +18,10 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   Widget? _loadingDialog;
   var dio = Dio();
-
+  final linkDownload = "http://trans-crew-dev.dkiv.vn/demo.zip";
+  ValueNotifier<int> percent = ValueNotifier(0);
+  final zipName = "demo.zip";
+  final htmlName = "output.html";
   @override
   void initState() {
     super.initState();
@@ -33,19 +38,13 @@ class _HomePageState extends State<HomePage> {
   showLoading({BuildContext? dialogContext}) {
     if (_loadingDialog == null) {
       _loadingDialog = Center(
-        child: SizedBox(
-          child: const CircularProgressIndicator(
-            color: Colors.red,
-          ),
-          height: 100,
-          width: 100,
-        ),
+        child: PercentLoadingDialog(percent),
       );
       showDialog(
           barrierDismissible: false,
           context: dialogContext ?? context,
           builder: (_) =>
-          _loadingDialog ??
+              _loadingDialog ??
               Container(
                 color: Colors.transparent,
               ));
@@ -62,75 +61,68 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Image.asset(
-          'assets/images/trans_crew_icon.png',
-          fit: BoxFit.cover,
-          height: 30,
-          // width: 60,
-          alignment: Alignment.centerLeft,
-        ),
-      ),
-      body: Stack(
-        children: <Widget>[
-          Container(
-            constraints: const BoxConstraints.expand(),
-            decoration: const BoxDecoration(
-              image: DecorationImage(
-                image: AssetImage("assets/images/login_SP.png"),
-                fit: BoxFit.cover,
-              ),
+      appBar: AppBar(title: Text('test screen')),
+      body: Center(
+        child: InkWell(
+          child: Container(
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              color: Colors.red,
             ),
+            height: 40,
+            width: 100,
+            child: Text("Open File"),
           ),
-          new Center(
-            child: InkWell(
-              child: Container(
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(10),
-                  color: Color(Colors.greenAccent.value),
-                ),
-                height: 40,
-                width: 100,
-                child: Text("Open File"),
-              ),
-              onTap: () async {
-                var tempDir = await getTemporaryDirectory();
-                String fullPath = "${tempDir.path}/output.zip";
-                print('full path ${fullPath}');
-                final zipFile = File(fullPath);
-                final outputHtml = File("${tempDir.path}/output.html");
-                bool isExistHtml = await outputHtml.exists();
-                if (isExistHtml) {
-                  OpenFile.open(outputHtml.path);
-                } else {
-                  showLoading();
-                  bool isExistFileZip = await zipFile.exists();
-                  if (!isExistFileZip) {
-                    await download2(dio,
-                        "http://trans-crew-dev.dkiv.vn/output.zip", fullPath);
-                  }
-                  try {
-                    await ZipFile.extractToDirectory(
-                        zipFile: zipFile, destinationDir: tempDir);
-                  } catch (e) {
-                    print(e);
-                  }
-                  hideLoading();
-                  OpenFile.open(outputHtml.path);
+          onTap: () async {
+            String fullPath = "";
+            late Directory tempDir;
+            // if (Platform.isAndroid) {
+            tempDir = await getTemporaryDirectory();
+            // } else if (Platform.isIOS) {
+            //   final tempDirPath = await PlatformChannel().getSavePath();
+            //   tempDir = Directory(tempDirPath);
+            // }
+            fullPath = "${tempDir.path}/$zipName";
+            print('full path ${fullPath}');
 
-
-                }
-              },
-            ),
-          )
-        ],
+            final zipFile = File(fullPath);
+            final outputHtml = File("${tempDir.path}/$htmlName");
+            bool isExistHtml = await outputHtml.exists();
+            if (isExistHtml) {
+              openFile(outputHtml.path);
+            } else {
+              showLoading();
+              bool isExistFileZip = await zipFile.exists();
+              if (!isExistFileZip) {
+                await download2(dio, linkDownload, fullPath);
+              }
+              try {
+                await ZipFile.extractToDirectory(
+                    zipFile: zipFile, destinationDir: tempDir);
+              } catch (e) {
+                print(e);
+              }
+              hideLoading();
+              openFile(outputHtml.path);
+            }
+          },
+        ),
       ),
     );
   }
 
+  openFile(String path) async {
+    if (Platform.isIOS) {
+      PlatformChannel().openWebView(path);
+    } else {
+      OpenFile.open(path);
+    }
+  }
+
   Future download2(Dio dio, String url, String savePath) async {
     try {
+      percent.value = 0;
       final response = await dio.download(
         url,
         savePath,
@@ -141,19 +133,10 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  void showDownloadProgress(received, total) {
+  void showDownloadProgress(int received, int total) {
     if (total != -1) {
-      print((received / total * 100).toStringAsFixed(0) + "%");
+      percent.value = received * 100 ~/ total;
+      print("${percent.value}%");
     }
-  }
-
-  Future<File> getImageFileFromAssets(String path) async {
-    final byteData = await rootBundle.load('assets/$path');
-
-    final file = File('${(await getTemporaryDirectory()).path}/$path');
-    await file.writeAsBytes(byteData.buffer
-        .asUint8List(byteData.offsetInBytes, byteData.lengthInBytes));
-
-    return file;
   }
 }
